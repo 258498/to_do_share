@@ -299,8 +299,17 @@
     "X-Bin-Versioning": "false"
   };
 
-  const MAX_PHOTOS   = 3;
+  const MAX_PHOTOS    = 3;
   const OPES_PASSWORD = "emma";
+  const CACHE_KEY     = "todo_partagee_v1";
+
+  function loadFromCache() {
+    try { const c = localStorage.getItem(CACHE_KEY); return c ? JSON.parse(c) : null; }
+    catch { return null; }
+  }
+  function saveToCache(lists) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(lists)); } catch {}
+  }
 
   let allLists      = [];   // tableau de { id, name, todos[] }
   let userRole      = "";   // "OPES" | "CARMA"
@@ -387,8 +396,19 @@
       role === "OPES" ? "✏️ OPES-SESDF — créez et gérez les listes" : "📷 CARMA — choisissez une liste à valider";
 
     show("screen-lists");
-    await fetchData();
-    renderListsScreen();
+
+    // Affiche le cache immédiatement (sans attendre l'API)
+    const cached = loadFromCache();
+    if (cached) {
+      allLists = cached;
+      renderListsScreen();
+    }
+
+    // Fetch en arrière-plan et met à jour si besoin
+    fetchData().then(() => {
+      saveToCache(allLists);
+      renderListsScreen();
+    });
   }
 
   function renderListsScreen() {
@@ -487,6 +507,7 @@
   }
 
   async function saveData() {
+    saveToCache(allLists); // cache local instantané
     await fetch(API, {
       method: "PUT", headers: HEADERS,
       body: JSON.stringify({ lists: allLists })
@@ -495,6 +516,7 @@
 
   async function fetchAndRender() {
     await fetchData();
+    saveToCache(allLists);
     renderTodos();
   }
 

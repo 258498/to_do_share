@@ -272,10 +272,10 @@
     <div class="photo-slots" id="photo-slots"></div>
     <div class="slot-label"  id="slot-label">0 / 3 photo(s)</div>
 
-    <input type="file" id="file-input" accept="image/*" capture="environment"
+    <input type="file" id="file-input" accept="image/*"
            style="display:none" onchange="handleFile(this)" />
 
-    <div class="comment-label">Commentaire</div>
+    <div class="comment-label">Commentaire <span style="font-weight:400;color:#bbb;text-transform:none;letter-spacing:0">(optionnel)</span></div>
     <textarea class="comment-input" id="comment-input" placeholder="Observations, remarques..."></textarea>
 
     <div class="modal-btns">
@@ -320,9 +320,9 @@
   let polling       = null;
 
   // ─────────────────────────────────────────────────
-  // Navigation entre écrans
+  // Navigation entre écrans + History API
   // ─────────────────────────────────────────────────
-  function show(screenId) {
+  function _applyScreen(screenId) {
     ["screen-role","screen-lists","screen-app"].forEach(id => {
       const el = document.getElementById(id);
       if (id === "screen-role" || id === "screen-lists") {
@@ -332,6 +332,25 @@
       }
     });
   }
+
+  function show(screenId) {
+    _applyScreen(screenId);
+    history.pushState({ screen: screenId }, "");
+  }
+
+  // Bouton précédent / suivant du navigateur
+  window.addEventListener("popstate", e => {
+    const target = e.state?.screen || "screen-role";
+    stopPolling();
+    if (target === "screen-lists") {
+      currentListId = null;
+      renderListsScreen();
+    }
+    _applyScreen(target);
+  });
+
+  // État initial
+  history.replaceState({ screen: "screen-role" }, "");
 
   function goBackToRole() {
     stopPolling();
@@ -683,14 +702,15 @@
     if (!file) return;
     const img = new Image();
     img.onload = () => {
-      const MAX    = 600;
+      // Compression agressive pour rester sous la limite JSONBin (100KB/bin)
+      const MAX    = 400;
       const scale  = Math.min(1, MAX / Math.max(img.width, img.height));
       const canvas = document.createElement("canvas");
       canvas.width  = img.width  * scale;
       canvas.height = img.height * scale;
       canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      if (currentSlot !== null && photoList.length < MAX_PHOTOS) {
-        photoList[currentSlot] = canvas.toDataURL("image/jpeg", 0.7);
+      if (currentSlot !== null && currentSlot < MAX_PHOTOS) {
+        photoList[currentSlot] = canvas.toDataURL("image/jpeg", 0.5);
       }
       renderSlots();
     };
@@ -703,12 +723,20 @@
     btn.disabled = true; btn.textContent = "⏳ Envoi...";
     const comment = document.getElementById("comment-input").value.trim() || null;
     const list    = getCurrentList();
+    const previous = list.todos.map(t => ({ ...t })); // sauvegarde pour rollback
     list.todos = list.todos.map(t => t.id === currentTodoId
       ? { ...t, done: true, photos: [...photoList], comment, completedAt: new Date().toLocaleString("fr-FR") }
       : t);
     renderTodos();
-    await saveData();
-    closeModal();
+    try {
+      await saveData();
+      closeModal();
+    } catch(e) {
+      // Rollback local si l'envoi échoue
+      list.todos = previous;
+      renderTodos();
+      alert("❌ Erreur lors de l'envoi. Les photos sont peut-être trop volumineuses. Réessayez avec moins de photos.");
+    }
     btn.disabled = false; btn.textContent = "✓ Valider";
   }
 
